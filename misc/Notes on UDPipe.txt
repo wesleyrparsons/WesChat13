@@ -1,0 +1,15 @@
+1. Compile
+Code
+fpc UDPipeConvertPlus.pas
+2. Run
+Code
+UDPipeConvertPlus.exe input.conllu output.txt
+3. Example output
+Input CoNLL‑U:
+
+Code
+2   dog   dog   NOUN   NN   Number=Sing|Person=3   3   nsubj
+Output:
+
+Code
+dog.noun.sg.3p

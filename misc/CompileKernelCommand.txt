@@ -1,0 +1,17 @@
+C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64>nvcc -ccbin "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64" -shared -o C:\Users\wespa\OneDrive\LazarusProject\WesChat12\WesChatKernel12.dll C:\Users\wespa\OneDrive\LazarusProject\WesChat12\WesChatKernel12.cu
+
+or 
+
+Goto
+
+"C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64"
+
+nvcc -shared -o C:\Users\wespa\OneDrive\LazarusProject\WesChat12\WesChatKernel12.dll C:\Users\wespa\OneDrive\LazarusProject\WesChat12\WesChatKernel12.cu
+
+or
+
+nvcc ^
+-ccbin "C:\Program Files (x86)\Microsoft Visual Studio\18\BuildTools\VC\Tools\MSVC\14.51.36231\bin\Hostx64\x64" ^
+-arch=sm_86 -shared -Xcompiler "/MD" ^
+-o C:\Users\wespa\OneDrive\LazarusProject\WesChat12\WesChatKernel12.dll ^
+C:\Users\wespa\OneDrive\LazarusProject\WesChat12\WesChatKernel12.cu

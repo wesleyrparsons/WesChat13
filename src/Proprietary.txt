@@ -1,0 +1,32 @@
+{==============================================================================}
+{                                                                              }
+{                WesChat: A Homebrew LLM Program                               }
+{                                                                              }
+{  A lightweight, homebrew LLM written in Free Pascal                          }
+{  (or Delphi) for personal, research, and educational use.                    }
+{                                                                              }
+{  Author        : Wesley R. Parsons                                           }
+{  wespar@bellsouth.net, www.wesparsons.com, Miami, Florida.                   }                                  
+{  Version       : 1.2                                                         }
+{  Stare Date    : January 18, 2026                                            }
+{                                                                              }
+{  Copyright © 2026 Wesley R. Parsons.                                         }
+{  This software is protected by U.S. and international copyright law.         }
+{  Unauthorized copying, distribution, or modification is prohibited.          }
+{                                                                              }
+{  License                                                                     }
+{  This program is free for personal, educational, and non-commercial use.     }
+{  You may modify and redistribute the source code provided this copyright     }
+{  notice and the above license terms remain unchanged and are included        }
+{  with any distribution.                                                      }
+{                                                                              }
+{  THIS SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EITHER      }
+{  EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF        }
+{  MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, OR NON-INFRINGEMENT.     }
+{                                                                              }
+{  This program includes unmodified code licensed under the Mozilla Public     }
+{  License 2.0, which is available at https://www.mozilla.org/MPL/2.0/         }
+{                                                                              }
+{==============================================================================}
+
+

@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <ProjectOptions>
+    <Version Value="12"/>
+    <PathDelim Value="\"/>
+    <General>
+      <Flags>
+        <MainUnitHasCreateFormStatements Value="False"/>
+        <MainUnitHasTitleStatement Value="False"/>
+        <MainUnitHasScaledStatement Value="False"/>
+      </Flags>
+      <SessionStorage Value="InProjectDir"/>
+      <Title Value="weschat13"/>
+      <ResourceType Value="res"/>
+      <UseXPManifest Value="True"/>
+      <XPManifest>
+        <DpiAware Value="True"/>
+      </XPManifest>
+    </General>
+    <BuildModes>
+      <Item Name="Default" Default="True"/>
+    </BuildModes>
+    <PublishOptions>
+      <Version Value="2"/>
+      <UseFileFilters Value="True"/>
+    </PublishOptions>
+    <RunParams>
+      <FormatVersion Value="2"/>
+    </RunParams>
+    <RequiredPackages>
+      <Item>
+        <PackageName Value="LCL"/>
+      </Item>
+    </RequiredPackages>
+    <Units>
+      <Unit>
+        <Filename Value="weschat13.lpr"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="matrix.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Matrix"/>
+      </Unit>
+      <Unit>
+        <Filename Value="test.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Test"/>
+      </Unit>
+      <Unit>
+        <Filename Value="Tokenize.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="train.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Train"/>
+      </Unit>
+      <Unit>
+        <Filename Value="notes.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Notes"/>
+      </Unit>
+      <Unit>
+        <Filename Value="Extras.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="Display.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="transform.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Transform"/>
+      </Unit>
+      <Unit>
+        <Filename Value="gpt2tokenize.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="GPT2Tokenize"/>
+      </Unit>
+      <Unit>
+        <Filename Value="gpt2_bpe.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="combinetables.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="CombineTables"/>
+      </Unit>
+      <Unit>
+        <Filename Value="symbolize.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Symbolize"/>
+      </Unit>
+      <Unit>
+        <Filename Value="westokenize.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="WesTokenize"/>
+      </Unit>
+      <Unit>
+        <Filename Value="iohandler.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="IOHandler"/>
+      </Unit>
+      <Unit>
+        <Filename Value="util.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Util"/>
+      </Unit>
+      <Unit>
+        <Filename Value="transformforward.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TransformForward"/>
+      </Unit>
+      <Unit>
+        <Filename Value="transformbackprop.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="TransformBackprop"/>
+      </Unit>
+      <Unit>
+        <Filename Value="flowchart.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="FlowChart"/>
+      </Unit>
+      <Unit>
+        <Filename Value="infer.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="Infer"/>
+      </Unit>
+      <Unit>
+        <Filename Value="outputhead.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="OutputHead"/>
+      </Unit>
+      <Unit>
+        <Filename Value="udtag.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="UDTag"/>
+      </Unit>
+    </Units>
+  </ProjectOptions>
+  <CompilerOptions>
+    <Version Value="11"/>
+    <PathDelim Value="\"/>
+    <Target>
+      <Filename Value="..\bin\weschat13"/>
+    </Target>
+    <SearchPaths>
+      <IncludeFiles Value=".;$(ProjOutDir)"/>
+      <UnitOutputDirectory Value="lib\$(TargetCPU)-$(TargetOS)"/>
+    </SearchPaths>
+    <Linking>
+      <Debugging>
+        <DebugInfoType Value="dsDwarf3"/>
+      </Debugging>
+    </Linking>
+    <Other>
+      <CompilerMessages>
+        <IgnoredMessages idx5094="True" idx5092="True" idx5091="True" idx5060="True" idx5058="True" idx5057="True" idx2005="True"/>
+      </CompilerMessages>
+    </Other>
+  </CompilerOptions>
+  <Debugging>
+    <Exceptions>
+      <Item>
+        <Name Value="EAbort"/>
+      </Item>
+      <Item>
+        <Name Value="ECodetoolError"/>
+      </Item>
+      <Item>
+        <Name Value="EFOpenError"/>
+      </Item>
+    </Exceptions>
+  </Debugging>
+</CONFIG>

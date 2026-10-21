@@ -1,0 +1,74 @@
+{$mode ObjFPC}{$H+}{$I proprietary.txt}
+
+{ WesChat, Version 1.2, begun January 10, 2026, by Wesley R. Parsons, wespar@bellouth.net, www.wespar.com.}
+
+Stage   Input          Output     Function  Overwrite   Accumulate         TP             Cache
+------ -------------- ----------  ---------  ----------  ------------------ -------------- -----------------
+X1      X              X1         LayerN    X1                             Gamma1 Beta1   LNhat1, LNInvStd1
+Q       X1 Wq          Q          Mult      Q           Wq                 Wq
+K       X1 Wk          K          Mult      K           Wk                 Wk
+V       X1 Wv          V          Mult      V           Wv                 Wv
+QKᵀ     Q Kᵀ           Scores     Mult      Scores
+SqrtD   Scores         Scores     1/SqrtD   Scores
+Mask    Scores         Scores     Mask      Scores
+Softmax Scores         Scores     Softmax   Scores
+X2      Scores V       X2         Mult      X2
+X3      X2 W0          X3         Mult      X3          W0                 W0
+X4      X1 X3          X4         Add       X4
+X5      X4             X5         LayerN    X5                             Gamma2  Beta2  LNhat2 LNInvStd2
+W1      X5 W1 b1       Hidden     Expand    Hidden      W1 b1              W1 b1
+ReLU    Hidden         Hidden     ReLU      Hidden
+W2      Hidden W2 b2   X6         Contract  X6          W2 b2              W2 b2
+X7      X5 X6          X7         Add       X7
+Logit   X7 WVocab      Logit      Mult      Logit       WVocab             WVocab
+Softmax Logit          Logit      Softmax   Logit
+GrFrLog Logit          Grad       GrFrLog   Grad
+dX7     Grad WVocabᵀ   dX7        Mult      dX7                            WVocabᵀ
+dWVocab X7ᵀ Grad       dWVocab    Mult                  dWVocab
+BPdX6   dX6 dX7        dX6        Add                   dX6
+BPdX5   dX5 dX7        dX5        Add                   dX5
+BPdb2   dX7            db2        Sum                   db2
+BPdW2   Hiddenᵀ dX6    dW2        Mult      dW2
+BPReLU  Hidden         dHidden    BPReLU    dHidden
+BPdU    dHidden        dU         Mask      dU
+BPdW1   X5ᵀ dU         dW1        Mult                  dW1
+BPdX5   dU W1ᵀ         dX5        Mult                  dX5                W1ᵀ
+BPdb1   dU             db1        Add                   db1
+BPGB2   X5 dX5 Gamma2  dGamma2    BPLayerN              dGamma2 dBeta2     Gamma2 Beta2  LNhat2 LNInvStd2
+        Beta2          dX4 dBeta2
+BPdX4   dX1 dX3        dX4        Add                   dX4
+BPdW0   X2ᵀ dX3        dW0        Mult                  dW0
+BPdX2   dX3 W0ᵀ        dX2        Mult      dX2                            W0ᵀ
+BPSco   dX2 Vᵀ         dScores    Mult      dScores
+BPdV    Scoresᵀ dX2    dV         Mult                  dV
+BPdSco  Scores dScores dZ         BPScores              dScores dZ
+BPdZ    dZ             dZ         Unmask    dZ
+BPSqrtD dZ             dZ         1/SqrtD   dZ
+BPdQ    dZ K           dQ         Mult      dQ
+BPdK    dKᵀ Q          dK         Mult      dK
+BPdQ    X1ᵀ dQ         dWq        Mult                  dWq
+BPdX1q  dQ Wqᵀ         dX1q       Mult                  dX1q               Wqᵀ
+BPdK    X1ᵀ dK         dWk        Mult                  dWk
+BPdX1k  dK Wkᵀ         dX1k       Mult                  dX1k               Wkᵀ
+BPdV    X1ᵀ dV         dWv        Mult                  dWv
+BPdX1q  dV Wvᵀ         dX1v       Mult                  dX1v               Wvᵀ
+BPX1    dX1q dX1k dX1v dX1        Add                   dX1
+BPGB1   X1 dX1 Gamma1  dGamma1    BPLayerN              dX dGamma1 dBeta1  Gamma1 Beta1  LNhat1 LNInvStd1
+        Beta1          dX dBeta1
+
+
+
+
+
+
+
+
+
+}
+end.
+
+
+
+
+
+

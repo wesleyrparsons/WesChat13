@@ -1,0 +1,29 @@
+5. One more performance improvement
+You still use dHiddenScratch to calculate the second contribution to X5.dGrad.
+That's perfectly reasonable, but it entails two GPU operations:
+1. Matrix multiplication into scratch.
+2. Vector addition into X5.dGrad.
+We could combine these into a single cuBLAS GEMM by using beta = 1.0 rather than beta = 0.0.
+The general GEMM equation is:
+\[
+C=\alpha AB+\beta C
+\]
+
+For your extra Value B input gradient, we want:
+\[
+X5.dGrad\leftarrow X5.dGrad+dValueB\,W2_B
+\]
+
+Thus:
+\[
+\alpha=1,\qquad\beta=1
+\]
+
+With a full-stride accumulating NN routine, conceptually:
+CuMatMulFullAccNN(CuHandle, Hidden2.dGrad, PSingle(W2.dValue) + GatedDim * ModelDim,
+  X5.dGrad, SeqLen, ModelDim, ValueBWidth, ModelDimProj, ModelDim, ModelDim);
+
+
+CuMatMulFullAccNN would be a new wrapper, with the same strides as your existing CuMatMulFullNN, but using beta = 1.0.
+This would eliminate the additional CuAccumulateGrad call and the need for scratch in this part of SplitSwiGLU.
+I wouldn't introduce it until you've verified correctness, but it's a worthwhile small optimization.

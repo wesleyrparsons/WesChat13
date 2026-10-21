@@ -1,0 +1,39 @@
+
+# WesChat13
+
+# Local training projects and large data
+/run/
+/cor/
+/data/
+/lib/
+**/lib/
+/ud/
+/backup/
+/tools/
+
+# Compiled program and intermediate files
+/bin/
+/build/
+*.exe
+*.dll
+*.ppu
+*.o
+*.obj
+*.compiled
+
+# Trained models and generated files
+*.model
+*.tok
+*.sym
+*.mer
+*.ckpt
+*.log
+
+# Lazarus session and temporary files
+*.lps
+*.bak
+*.tmp
+*.~*
+/src/WesChat.lpi
+/src/WesChat.lpr
+backup/

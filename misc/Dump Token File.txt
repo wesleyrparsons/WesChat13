@@ -1,0 +1,15 @@
+$bytes = [IO.File]::ReadAllBytes("C:\wc\ts100mb912\tokens\tinystories_100mb.tok")
+$offset = 1032
+0..299 | ForEach-Object {
+    [BitConverter]::ToInt32($bytes, $offset + ($_ * 4))
+}
+
+
+
+
+$bytes = [IO.File]::ReadAllBytes("C:\wc\ts100mb912\tokens\tinystories_100mb.tok")
+$offset = 1032
+$tokens = 0..299 | ForEach-Object {
+    [BitConverter]::ToInt32($bytes, $offset + ($_ * 4))
+}
+$tokens -join " "
