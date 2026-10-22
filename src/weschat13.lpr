@@ -89,7 +89,6 @@ end;
 
 
 { Work folder and file helpers }
-
  // Establish WesChat directories relative to the executable.
 procedure InitializeWesChatFolders;
 var
@@ -779,6 +778,48 @@ begin
   Writeln('Log written: ', LogName, '.');
 end;
 
+{ Model configuration }
+// Select MLP gating for a new model only.
+procedure SelectNewModelGating;
+var
+  Choice: string;
+begin
+  // Each new model starts with the default, regardless of the previous model.
+  MLPGatingKind := NoGating;
+
+  if YesToAll then begin
+    Writeln('MLP gating = ', MLPGatingKindName(MLPGatingKind), ' (default).');
+    Exit;
+  end;
+
+  Writeln('--- MLP Gating ---');
+  Writeln('N = No gating (default)');
+  Writeln('S = Self gating');
+  Writeln('G = Split SwiGLU');
+
+  repeat
+    Write('Select gating method [N/S/G], Enter = N: ');
+    Readln(Choice);
+    Choice := UpperCase(Trim(Choice));
+
+    if (Choice = '') or (Choice = 'N') then begin
+      MLPGatingKind := NoGating;
+      Break;
+    end
+    else if Choice = 'S' then begin
+      MLPGatingKind := SelfGating;
+      Break;
+    end
+    else if Choice = 'G' then begin
+      MLPGatingKind := SplitSwiGLU;
+      Break;
+    end
+    else
+      Writeln('Invalid selection. Enter N, S, or G.');
+  until False;
+
+  Writeln('Selected MLP gating: ', MLPGatingKindName(MLPGatingKind), '.');
+end;
 
 { Tokenization workflows }
 // Run GPT2Tokenize while suppressing its automatic file saves.
@@ -1098,8 +1139,8 @@ begin
 
   if Length(TokenizedCorpus) > 0 then begin
     // Writeln('Tokenizer kind before training: ', TokenizerKindName(TokenizerKind));
-
     if AskYesNo('Proceed to training now?', True) then begin
+      SelectNewModelGating;
       NewModel := True;
       ParamsNeedCopyToDevice := True;
 
@@ -1646,6 +1687,7 @@ begin
     SaveCurrentTokenListDefault;
 
   if AskYesNo('Proceed to training?', True) then begin
+    SelectNewModelGating;
     WorkingName := CurrentBaseName;
     WriteInfoLog(CurrentBaseName);
     RunTrain(WModelParams, WModelState, WAdamWState, TokenizedCorpus);
@@ -1706,6 +1748,7 @@ begin
   Writeln('Damned Thing data loaded. Tokens = ', Length(TokenizedCorpus), '; Symbols = ', nSymbols, '; Corpus size = ', nCorpus, '.');
 
   if AskYesNo('Proceed to training?', True) then begin
+    SelectNewModelGating;
     WorkingName := CurrentBaseName;
     WriteInfoLog(CurrentBaseName);
     RunTrain(WModelParams, WModelState, WAdamWState, TokenizedCorpus);
@@ -1757,17 +1800,11 @@ begin
     Exit;
   end;
 
-  // Load tokenized corpus.
-  SetLength(TokenizedCorpus, 0);
-  IOHandler.LoadTokenList(TokenFileName, TokenizedCorpus);
-  SetLoadedTokenCounts(TokenizedCorpus);
+  // Discard CUDA storage belonging to the preceding model.
+  if CudaAllocated or (CuHandle <> nil) then
+    EndCuda(WModelParams, WModelState, WAdamWState);
 
-  if Length(TokenizedCorpus) < MinTokens then begin
-    Writeln('Token list is too small. Length = ', Length(TokenizedCorpus), '.');
-    Exit;
-  end;
-
-  // Load matching Wes symbol table.
+  // Load matching symbol table.
   ResetWesTrie;
   SetLength(SymbolTable, 0);
 
@@ -1775,15 +1812,22 @@ begin
   LoadSymbolTable(SymbolFileName, SymbolTable);
 
   if Length(SymbolTable) < MinSymbols then begin
-    Writeln('Symbol table is too small. Length = ', Length(SymbolTable), '.');
+    Writeln('Symbol table is too small.');
     Exit;
   end;
 
   nSymbols := Length(SymbolTable);
+  nVocab := nSymbols;
 
-  // Discard CUDA storage belonging to the preceding model.
-  if CudaAllocated or (CuHandle <> nil) then
-    EndCuda(WModelParams, WModelState, WAdamWState);
+  // Load tokenized corpus.
+  SetLength(TokenizedCorpus, 0);
+  IOHandler.LoadTokenList(TokenFileName, TokenizedCorpus);
+  SetLoadedTokenCounts(TokenizedCorpus);
+
+  if Length(TokenizedCorpus) < MinTokens then begin
+    Writeln('Token list is too small.');
+    Exit;
+  end;
 
   // Load saved parameters and model information.
   if not LoadModel(ModelFileName, WModelParams, WAdamWState) then begin
@@ -1866,6 +1910,10 @@ begin
   SetTokenizerMode(GPT2Tokenizer);
   EnsureGPT2VocabLoaded;
 
+  // Discard CUDA storage belonging to the preceding model.
+  if CudaAllocated or (CuHandle <> nil) then
+    EndCuda(WModelParams, WModelState, WAdamWState);
+
   // Load tokenized corpus.
   SetLength(TokenizedCorpus, 0);
   IOHandler.LoadTokenList(TokenFileName, TokenizedCorpus);
@@ -1881,10 +1929,6 @@ begin
   SetLength(SymbolTable, 0);
   nSymbols := 0;
   FromSymbolTable := False;
-
-  // Discard CUDA storage belonging to the preceding model.
-  if CudaAllocated or (CuHandle <> nil) then
-    EndCuda(WModelParams, WModelState, WAdamWState);
 
   // Load saved parameters and checkpoint information.
   if not LoadModel(ModelFileName, WModelParams, WAdamWState) then begin
@@ -2043,7 +2087,7 @@ begin
     Writeln('D: Train a new model with WesT on the Damned Thing token list and symbol table.');
     Writeln('GW: Resume the Gibbon 924 WesT best model.');
     Writeln('GU: Resume the Gibbon 924 UD best model.');
-    Writeln('GG: Resume the Gibbon 924 GPT2 best model.');
+    Writeln('GG: Resume the Gibbon 924 GPT-2 best model.');
     Writeln('CHU: Resume the Churchill UD best model.');
     Writeln('CHW: Resume the Churchill WesT best model.');
     Writeln('TMP: Resume the The Monkey''s Paw WesT best model.');
@@ -2362,6 +2406,9 @@ begin
 end;
 
 { Main program }
+
+{$R *.res}
+
 begin
   // Configure UTF-8 console input and output.
   SetMultiByteConversionCodePage(CP_UTF8);

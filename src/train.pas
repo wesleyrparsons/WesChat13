@@ -1414,6 +1414,11 @@ begin
   end;
 
   { Model and CUDA initialization }
+
+  // A new model must not reuse the preceding model's CUDA storage.
+  if WasNewModel and (CudaAllocated or (CuHandle <> nil)) then
+    EndCuda(WModelParams, WModelState, WAdamWState);
+
   // Initialize transformer state.
   InitializeTransformerState(WModelState);
 

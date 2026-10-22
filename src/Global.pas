@@ -556,7 +556,7 @@ var
 var
   Training: Boolean = False;                      // True while training; enables training behavior such as dropout.
   NormKind: TNormKind = LayerNorm;                // Layer norming kind.
-  MLPGatingKind: TMLPGatingKind = SelfGating;     // Gating kind.
+  MLPGatingKind: TMLPGatingKind = NoGating;       // Gating kind. Default is none.
   ProjText: string = '4';                         // Text version of Proj.
   ActivationKind: TActivationKind = SiLU;         // Activation kind.
   ActivationAlpha: Single = 0.01;                 // Activation parameter.

@@ -1009,9 +1009,7 @@ begin
     end
     else begin
       CloseFile(F);
-      Writeln('Unsupported model options version. File = ',
-        Header.ModelOptionsVersion, '; Program = ',
-        WES3ModelOptionsVersion, '.');
+      Writeln('Unsupported model options version. File = ', Header.ModelOptionsVersion, '; Program = ', WES3ModelOptionsVersion, '.');
       Exit;
     end;
 
@@ -1026,8 +1024,7 @@ begin
       MLPGatingKind := TMLPGatingKind(Header.Reserved[0]);
     end
     else
-      Writeln('WARNING: This WES3 model does not store its MLP gating method. ',
-        'Using the current setting: ', WES3GatingName(MLPGatingKind),
+      Writeln('This WES3 model does not store its MLP gating method. Using the current setting: ', WES3GatingName(MLPGatingKind),
         '. Verify it matches the model before training or inference.');
 
     // Restore model metadata.
@@ -1059,8 +1056,7 @@ begin
     RestoreTrainingCheckpoint(Checkpoint);
     AdamWStateLoaded := True;
 
-    // Host record contains pointer values written into the file.
-    // These must never be treated as valid device pointers.
+    // Host record contains pointer values written into the file. These must never be treated as valid device pointers.
     ClearDevicePointers(Model);
 
     NewModel := False;
