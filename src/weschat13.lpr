@@ -157,28 +157,46 @@ begin
   ShellExecute(0, 'open', PChar(WorkRoot), nil, nil, SW_SHOWNORMAL);
 end;
 
-// Set the active work identity and the default output filenames.
-procedure SetWorkIdentity(const RootDir, BaseName: string);
+
+ // Establish the work folder and derive the experiment name from it.
+procedure SetWorkIdentity(const RootDir: string);
 begin
   WorkingDir := IncludeTrailingPathDelimiter(ExpandFileName(RootDir));
   InitWorkFolders(WorkingDir);
 
-  CurrentBaseName := BaseName;
-  WorkingName := BaseName;
+  // The folder name is the only experiment identifier.
+  WorkingName := ExtractFileName(ExcludeTrailingPathDelimiter(WorkingDir));
+  CurrentBaseName := WorkingName;
 
+  // Default filenames for newly created models.
   BestModelFileName := ModelDir + WorkingName + '_best.model';
   TokenFileName := TokenDir + WorkingName + '.tok';
   SymbolFileName := SymbolDir + WorkingName + '.sym';
   RunFileName := RunDir + WorkingName + '.run';
   LogFileName := LogDir + WorkingName + '.log';
 
-  Writeln('Using work folder: ', WorkRoot, '. Using tokenizer: ', TokenizerKindName(TokenizerKind), '.');
+  Writeln('Using work folder: ', WorkingDir);
 end;
 
-// Select an existing work folder and database name.
-procedure SelectExistingWork(const FolderName, BaseName: string);
+// Select a predefined or existing experiment folder.
+procedure SelectExistingWork(const FolderName: string);
 begin
-  SetWorkIdentity(ResolveWorkFolder(FolderName), BaseName);
+  SetWorkIdentity(ResolveWorkFolder(FolderName));
+end;
+
+ // Ask for a work folder when creating a new experiment.
+procedure SelectNewWorkFolder;
+var
+  FolderName: string;
+begin
+  Writeln;
+  Writeln('--- New Experiment ---');
+  Write('Enter work folder name [WesChatWork]: ');
+  Readln(FolderName);
+
+  SetWorkIdentity(ResolveWorkFolder(FolderName));
+
+  Writeln('Experiment name: ', WorkingName);
 end;
 
 // Return True when a filename includes a directory path.
@@ -386,8 +404,6 @@ begin
   nCorpus := Length(Corpus);
   CorpusID := ComputeCorpusID(Corpus);
 
-  CurrentBaseName := CleanBaseName(OutCorpusFileName);
-
   SetLength(CorpusFileNames, 1);
   CorpusFileNames[0] := OutCorpusFileName + '   ' + IntToStr(FileSize(OutCorpusFileName)) + ' bytes   ' + DateTimeToStr(FileDateToDateTime(FileAge(OutCorpusFileName)));
 
@@ -409,7 +425,6 @@ begin
 
   if not RequireExistingFile(ListFileName, ListDir) then Exit;
 
-  CurrentBaseName := CleanBaseName(ListFileName);
   ListBaseDir := ExtractFilePath(ListFileName);
 
   AssignFile(F, ListFileName);
@@ -500,7 +515,6 @@ begin
 
   if not RequireExistingFile(ListFileName, ListDir) then Exit;
 
-  CurrentBaseName := CleanBaseName(ListFileName);
   ListBaseDir := ExtractFilePath(ListFileName);
 
   AssignFile(F, ListFileName);
@@ -644,11 +658,41 @@ begin
     Exit;
   end;
 
-  CurrentBaseName := CleanBaseName(TokenFileName);
-
   Writeln('Using token list: ', TokenFileName);
 
   Result := True;
+end;
+
+// Derive the experiment work folder from a loaded checkpoint.
+procedure AdoptModelWorkFolder;
+var
+  SavedModelFile, SavedTokenFile, SavedSymbolFile: string;
+  ModelFolder, ExperimentFolder: string;
+begin
+  SavedModelFile := ExpandFileName(ModelFileName);
+  ModelFolder := ExtractFileDir(SavedModelFile);
+
+  if not SameText(ExtractFileName(ModelFolder), 'models') then begin
+    Writeln('Warning: Model is not in a standard models subfolder.');
+    Writeln('The current work folder has not been changed.');
+    Exit;
+  end;
+
+  ExperimentFolder := ExtractFileDir(ModelFolder);
+
+  SavedTokenFile := TokenFileName;
+  SavedSymbolFile := SymbolFileName;
+
+  SetWorkIdentity(ExperimentFolder);
+
+  // Retain the actual files selected for this operation.
+  ModelFileName := SavedModelFile;
+  TokenFileName := SavedTokenFile;
+  SymbolFileName := SavedSymbolFile;
+
+  // Preserve the existing best-checkpoint filename.
+  if EndsText('_best.model', ExtractFileName(SavedModelFile)) then
+    BestModelFileName := SavedModelFile;
 end;
 
 // Prompt for and load a saved model.
@@ -665,6 +709,7 @@ begin
     EndCuda(WModelParams, WModelState, WAdamWState);
 
   if LoadModel(ModelFileName, WModelParams, WAdamWState) then begin
+    AdoptModelWorkFolder;
     Write('Loading model: ', ModelFileName);
     Write('; Model size: ', FileSize(ModelFileName), ' bytes');
     Writeln('; Model date: ', DateTimeToStr(FileDateToDateTime(FileAge(ModelFileName))), '.');
@@ -868,7 +913,7 @@ begin
       nSymbols := Length(SymbolTable);
       nVocab := nSymbols;
 
-      Writeln('After RunSymbolize: nSymbols = ', nSymbols, '; nVocab = ', nVocab);
+      Writeln('After RunSymbolize: nSymbols = ', nSymbols, '; nVocab = ', nVocab, '.');
 
       if nSymbols < MinSymbols then begin
         Writeln('Too few symbols found after symbolization. nSymbols = ', nSymbols);
@@ -988,8 +1033,6 @@ begin
   nCorpus := Length(Corpus);
   CorpusID := ComputeCorpusID(Corpus);
 
-  CurrentBaseName := CleanBaseName(CorpusFileName);
-
   SetLength(CorpusFileNames, 1);
   CorpusFileNames[0] := CorpusFileName + '   ' + IntToStr(FileSize(CorpusFileName)) + ' bytes   ' + DateTimeToStr(FileDateToDateTime(FileAge(CorpusFileName)));
 
@@ -1038,7 +1081,6 @@ begin
 
   if not RequireExistingFile(ListFile, ListDir) then Exit;
 
-  CurrentBaseName := CleanBaseName(ListFile);
   ListBaseDir := ExtractFilePath(ListFile);
 
   AssignFile(F, ListFile);
@@ -1099,6 +1141,8 @@ procedure DoTokenize;
 var
   TokChoice, SourceChoice: string;
 begin
+  SelectNewWorkFolder;
+
   Writeln;
   Writeln('--- Tokenize ---');
   Writeln('W = Wes tokenizer');
@@ -1138,13 +1182,10 @@ begin
   end;
 
   if Length(TokenizedCorpus) > 0 then begin
-    // Writeln('Tokenizer kind before training: ', TokenizerKindName(TokenizerKind));
     if AskYesNo('Proceed to training now?', True) then begin
       SelectNewModelGating;
       NewModel := True;
       ParamsNeedCopyToDevice := True;
-
-      SetWorkIdentity(WorkingDir, CurrentBaseName);
 
       WriteInfoLog(CurrentBaseName);
       RunTrain(WModelParams, WModelState, WAdamWState, TokenizedCorpus);
@@ -1162,7 +1203,7 @@ end;
 // Train a new model or resume training from user-selected files.
 procedure DoTrain;
 var
-  ModelChoice: string;
+  ModelChoice, InputTokenFile, InputSymbolFile: string;
 begin
   Writeln;
   Writeln('--- Train ---');
@@ -1178,8 +1219,10 @@ begin
   else
     if not LoadTokenListPrompt then Exit;
 
-  if Length(SymbolTable) < MinSymbols then
-    if not LoadSymbolTablePrompt then Exit
+
+  if Length(SymbolTable) < MinSymbols then begin
+    if not LoadSymbolTablePrompt then Exit;
+  end
   else begin
     nSymbols := Length(SymbolTable);
     nVocab := nSymbols;
@@ -1199,12 +1242,21 @@ begin
     end;
   end
   else begin
+    // Remember the input files, which may be outside the new work folder.
+    InputTokenFile := TokenFileName;
+    InputSymbolFile := SymbolFileName;
+
+    SelectNewWorkFolder;
+    SelectNewModelGating;
+
+    // Preserve the actual input filenames for reporting.
+    TokenFileName := InputTokenFile;
+    SymbolFileName := InputSymbolFile;
+
     NewModel := True;
     ParamsNeedCopyToDevice := True;
     nVocab := nSymbols;
   end;
-
-  SetWorkIdentity(WorkingDir, CurrentBaseName);
 
   WriteInfoLog(CurrentBaseName);
   RunTrain(WModelParams, WModelState, WAdamWState, TokenizedCorpus);
@@ -1376,12 +1428,10 @@ begin
   NewModel := False;
   ParamsNeedCopyToDevice := True;
 
-  // Establish filenames for the new training data.
-  SetWorkIdentity(WorkingDir, CurrentBaseName);
+  // The loaded model has already established the work folder.
   WriteInfoLog(CurrentBaseName);
 
   // Enhancement starts a new optimizer/training run.
-  // Keep this call if that is the intended behavior.
   ResetTrainingStateForEnhancement(WAdamWState);
 
   if not AskYesNo('Proceed to training?', True) then Exit;
@@ -1588,8 +1638,7 @@ begin
     Exit;
   end;
 
-  WorkingDir := ResolveWorkFolder(NewDir);
-  InitWorkFolders(WorkingDir);
+  SetWorkIdentity(ResolveWorkFolder(NewDir));
 
   Writeln('Work folder changed.');
   ShowWorkFolders;
@@ -1628,6 +1677,373 @@ begin
   until Choice = 'X';
 end;
 
+ // Find a best checkpoint and its matching input files in the current work folder.
+function SelectBestModelFiles(const RequireSymbols: Boolean): Boolean;
+var
+  SR: TSearchRec;
+  Candidates: TStringList;
+  Stem, Name, Choice: string;
+  i, Selection: Integer;
+begin
+  Result := False;
+  Candidates := TStringList.Create;
+
+  try
+    Candidates.Sorted := True;
+
+    // Locate compatible best checkpoints.
+    if SysUtils.FindFirst(ModelDir + '*_best.model', faAnyFile, SR) = 0 then begin
+      try
+        repeat
+          if (SR.Attr and faDirectory) <> 0 then Continue;
+
+          Name := SR.Name;
+          if not EndsText('_best.model', Name) then Continue;
+
+          Stem := Copy(Name, 1, Length(Name) - Length('_best.model'));
+
+          if not FileExists(TokenDir + Stem + '.tok') then Continue;
+          if RequireSymbols and not FileExists(SymbolDir + Stem + '.sym') and
+             not FileExists(SymbolDir + Stem + '_ud.sym') then Continue;
+          Candidates.Add(Name);
+        until SysUtils.FindNext(SR) <> 0;
+      finally
+        SysUtils.FindClose(SR);
+      end;
+    end;
+
+    if Candidates.Count = 0 then begin
+      Writeln('No best model with matching input files found in: ', WorkRoot);
+      Exit;
+    end;
+
+    // Ask which checkpoint only when the folder contains several.
+    if Candidates.Count = 1 then
+      Selection := 0
+    else begin
+      Writeln;
+      Writeln('Compatible best models in ', WorkRoot, ':');
+
+      for i := 0 to Candidates.Count - 1 do
+        Writeln(i + 1, ': ', Candidates[i]);
+
+      repeat
+        Write('Select model number: ');
+        Readln(Choice);
+
+        if TryStrToInt(Trim(Choice), Selection) and
+           (Selection >= 1) and (Selection <= Candidates.Count) then
+          Break;
+
+        Writeln('Invalid selection.');
+      until False;
+
+      Dec(Selection);
+    end;
+
+    Name := Candidates[Selection];
+    Stem := Copy(Name, 1, Length(Name) - Length('_best.model'));
+
+    ModelFileName := ModelDir + Name;
+    TokenFileName := TokenDir + Stem + '.tok';
+
+    if RequireSymbols then begin
+      SymbolFileName := SymbolDir + Stem + '.sym';
+
+      if not FileExists(SymbolFileName) then
+        SymbolFileName := SymbolDir + Stem + '_ud.sym';
+    end
+    else
+      SymbolFileName := '';
+
+    // Continued training saves the best model to its original filename.
+    BestModelFileName := ModelFileName;
+
+    Writeln('Selected checkpoint: ', ModelFileName);
+    Writeln('Matching token list: ', TokenFileName);
+
+    if RequireSymbols then
+      Writeln('Matching symbol table: ', SymbolFileName);
+
+    Result := True;
+  finally
+    Candidates.Free;
+  end;
+end;
+
+
+{ Generic experiment continuation }
+
+// Locate a model or token file, preferring the standard experiment name.
+function LocateResumeFile(const DefaultPath, Directory, Mask, Description: string; out FoundPath: string): Boolean;
+var
+  SR: TSearchRec;
+  Count: Integer;
+  OnlyFile, S: string;
+begin
+  Result := False;
+  FoundPath := '';
+
+  if FileExists(DefaultPath) then begin
+    FoundPath := DefaultPath;
+    Exit(True);
+  end;
+
+  Count := 0;
+  OnlyFile := '';
+
+  if SysUtils.FindFirst(Directory + Mask, faAnyFile, SR) = 0 then begin
+    try
+      repeat
+        if (SR.Attr and faDirectory) = 0 then begin
+          Inc(Count);
+          OnlyFile := Directory + SR.Name;
+        end;
+      until SysUtils.FindNext(SR) <> 0;
+    finally
+      SysUtils.FindClose(SR);
+    end;
+  end;
+
+  if Count = 1 then begin
+    FoundPath := OnlyFile;
+    Exit(True);
+  end;
+
+  if Count > 1 then
+    Writeln('Multiple ', Description, ' files found.')
+  else
+    Writeln('No automatic ', Description, ' match found.');
+
+  Write('Enter ', Description, ' filename, blank to cancel: ');
+  Readln(S);
+
+  if Trim(S) = '' then Exit;
+
+  FoundPath := ResolveInputFile(S, Directory);
+
+  if not FileExists(FoundPath) then begin
+    Writeln('File not found: ', FoundPath);
+    Exit;
+  end;
+
+  Result := True;
+end;
+
+ // Locate a symbol table inside the selected experiment folder.
+function LocateResumeSymbolFile(out FoundPath: string): Boolean;
+var
+  SR: TSearchRec;
+  Count: Integer;
+  S: string;
+begin
+  Result := False;
+  FoundPath := '';
+  Count := 0;
+
+  if SysUtils.FindFirst(SymbolDir + '*.sym', faAnyFile, SR) = 0 then begin
+    try
+      repeat
+        if (SR.Attr and faDirectory) = 0 then begin
+          Inc(Count);
+          FoundPath := SymbolDir + SR.Name;
+        end;
+      until SysUtils.FindNext(SR) <> 0;
+    finally
+      SysUtils.FindClose(SR);
+    end;
+  end;
+
+  if Count = 1 then begin
+    Writeln('Using experiment symbol table: ', FoundPath);
+    Exit(True);
+  end;
+
+  if Count > 1 then
+    Writeln('Multiple symbol tables found in ', SymbolDir, '.')
+  else
+    Writeln('No symbol table found in ', SymbolDir, '.');
+
+  Write('Enter matching symbol table filename, blank to cancel: ');
+  Readln(S);
+
+  if Trim(S) = '' then Exit;
+
+  FoundPath := ResolveInputFile(S, SymbolDir);
+
+  if not FileExists(FoundPath) then begin
+    Writeln('Symbol table not found: ', FoundPath);
+    Exit;
+  end;
+
+  Result := True;
+end;
+
+// Continue an existing experiment from its saved checkpoint.
+procedure DoContinueExperiment;
+var
+  FolderName, FolderPath: string;
+  SelectedModel, SelectedTokens, SelectedSymbols: string;
+  SavedTokenizer: TTokenizerKind;
+  SavedVocab, SavedRawTokens: Integer;
+  F: TextFile;
+begin
+  Writeln;
+  Writeln('--- Continue Existing Experiment ---');
+  Write('Enter work folder name, blank to cancel: ');
+  Readln(FolderName);
+
+  if Trim(FolderName) = '' then Exit;
+
+  FolderPath := ResolveWorkFolder(FolderName);
+
+  if not DirectoryExists(FolderPath) then begin
+    Writeln('Work folder does not exist: ', FolderPath);
+    Exit;
+  end;
+
+  SetWorkIdentity(FolderPath);
+
+  // Find the best checkpoint and its token list.
+  if not LocateResumeFile(BestModelFileName, ModelDir, '*_best.model', 'model', SelectedModel) then Exit;
+  if not LocateResumeFile(TokenFileName, TokenDir, '*.tok', 'token list', SelectedTokens) then Exit;
+
+  // Release any preceding model's GPU resources.
+  if CudaAllocated or (CuHandle <> nil) then
+    EndCuda(WModelParams, WModelState, WAdamWState);
+
+  // Load the model and its saved AdamW state.
+  ModelFileName := SelectedModel;
+
+  if not LoadModel(ModelFileName, WModelParams, WAdamWState) then begin
+    Writeln('Unable to load model: ', ModelFileName);
+    Exit;
+  end;
+
+  SavedTokenizer := TokenizerKind;
+  SavedVocab := nVocab;
+  SavedRawTokens := RawTokenCount;
+
+  // Load the matching token list.
+  TokenFileName := SelectedTokens;
+  SetLength(TokenizedCorpus, 0);
+
+  IOHandler.LoadTokenList(TokenFileName, TokenizedCorpus);
+
+  if TokenizerKind <> SavedTokenizer then begin
+    Writeln('Tokenizer mismatch between model and token list.');
+    Exit;
+  end;
+
+  SetLoadedTokenCounts(TokenizedCorpus);
+
+  if Length(TokenizedCorpus) < MinTokens then begin
+    Writeln('Token list is too small.');
+    Exit;
+  end;
+
+  if (SavedRawTokens > 0) and (SavedRawTokens <> RawTokenCount) then begin
+    Writeln('Token count differs from saved model.');
+    Writeln('Saved model tokens = ', SavedRawTokens);
+    Writeln('Loaded raw tokens  = ', RawTokenCount);
+    Writeln('Continuation aborted.');
+    Exit;
+  end;
+
+  // Load matching vocabulary.
+  if SavedTokenizer in [WesTokenizer, UDTokenizer] then begin
+    if not LocateResumeSymbolFile(SelectedSymbols) then Exit;
+
+    SymbolFileName := SelectedSymbols;
+
+    ResetWesTrie;
+    SetLength(SymbolTable, 0);
+
+    FromSymbolTable := True;
+    LoadSymbolTable(SymbolFileName, SymbolTable);
+
+    if TokenizerKind <> SavedTokenizer then begin
+      Writeln('Tokenizer mismatch between model and symbol table.');
+      Exit;
+    end;
+
+    nSymbols := Length(SymbolTable);
+
+    if nSymbols <> SavedVocab then begin
+      Writeln('Vocabulary mismatch.');
+      Writeln('Model vocabulary = ', SavedVocab);
+      Writeln('Symbol count     = ', nSymbols);
+      Exit;
+    end;
+
+    nVocab := SavedVocab;
+
+    // Remember the validated symbol file location for future resumes.
+    AssignFile(F, WorkingDir + 'resume-symbol-path.txt');
+    Rewrite(F);
+    try
+      Writeln(F, SymbolFileName);
+    finally
+      CloseFile(F);
+    end;
+
+  end
+  else begin
+    // GPT-2 uses its standard vocabulary files.
+    EnsureGPT2VocabLoaded;
+    SetLength(SymbolTable, 0);
+    nSymbols := 0;
+    FromSymbolTable := False;
+    SymbolFileName := '';
+
+    if nVocab <> SavedVocab then begin
+      Writeln('GPT-2 vocabulary mismatch.');
+      Exit;
+    end;
+  end;
+
+  if nVocab > DimVocab then begin
+    Writeln('Model vocabulary exceeds DimVocab.');
+    Exit;
+  end;
+
+  // Restore checkpoint identity.
+  ModelFileName := SelectedModel;
+  TokenFileName := SelectedTokens;
+  BestModelFileName := SelectedModel;
+
+  NewModel := False;
+  ParamsNeedCopyToDevice := True;
+
+  TokenizedCorpusPresent := True;
+  SymbolTablePresent := SavedTokenizer in [WesTokenizer, UDTokenizer];
+  ModelPresent := True;
+
+  Writeln;
+  Writeln('Experiment: ', WorkingName);
+  Writeln('Model:   ', ModelFileName);
+  Writeln('Tokens:  ', TokenFileName);
+  if SymbolFileName <> '' then
+    Writeln('Symbols: ', SymbolFileName);
+  Writeln('Raw tokens = ', RawTokenCount);
+  Writeln('Vocabulary = ', nVocab);
+  Writeln('Tokenizer  = ', TokenizerKindName(TokenizerKind));
+  Writeln('Completed epochs = ', CompletedEpochs);
+  Writeln('AdamW step = ', AdamWStep);
+
+  if not AskYesNo('Proceed to resumed training?', True) then Exit;
+
+  WriteInfoLog(CurrentBaseName);
+  RunTrain(WModelParams, WModelState, WAdamWState, TokenizedCorpus);
+
+  if TrainSuccess then begin
+    if AskYesNo('Save an additional model?', False) then
+      MaybeSaveModel;
+  end;
+
+  if AskYesNo('Proceed to inference?', False) then
+    RunInfer(WModelParams, WModelState, WAdamWState);
+end;
 
 { Predefined model workflows }
 // Prepare and train the predefined Bela Wes model.
@@ -1637,7 +2053,7 @@ begin
   Writeln('--- Bela Corpus ---');
 
   nCorpus := 1036;
-  SelectExistingWork('belaw', 'belaw');
+  SelectExistingWork('belaw');
   TokenizedCorpusPresent := False;
   SymbolTablePresent := False;
   ModelPresent := False;
@@ -1688,7 +2104,6 @@ begin
 
   if AskYesNo('Proceed to training?', True) then begin
     SelectNewModelGating;
-    WorkingName := CurrentBaseName;
     WriteInfoLog(CurrentBaseName);
     RunTrain(WModelParams, WModelState, WAdamWState, TokenizedCorpus);
 
@@ -1708,7 +2123,7 @@ begin
   Writeln('--- Damned Thing Corpus ---');
 
   nCorpus := 18457;
-  SelectExistingWork('dt904', 'dt904');
+  SelectExistingWork('dt904');
   TokenizedCorpusPresent := False;
   SymbolTablePresent := False;
   ModelPresent := False;
@@ -1749,7 +2164,6 @@ begin
 
   if AskYesNo('Proceed to training?', True) then begin
     SelectNewModelGating;
-    WorkingName := CurrentBaseName;
     WriteInfoLog(CurrentBaseName);
     RunTrain(WModelParams, WModelState, WAdamWState, TokenizedCorpus);
 
@@ -1763,7 +2177,7 @@ begin
 end;
 
 // Resume a predefined Wes or UD best model.
-procedure DoResumeBestWesTModel(const ModelTitle, FolderName, DataBaseName: string; const ATokenizerKind: TTokenizerKind);
+procedure DoResumeBestWesTModel(const ModelTitle, FolderName: string; const ATokenizerKind: TTokenizerKind);
 begin
   Writeln;
   Writeln('--- ', ModelTitle, ' ---');
@@ -1773,32 +2187,15 @@ begin
     Exit;
   end;
 
-  SelectExistingWork(FolderName, DataBaseName);
+  SelectExistingWork(FolderName);
   SetTokenizerMode(ATokenizerKind);
 
   TokenizedCorpusPresent := False;
   SymbolTablePresent := False;
   ModelPresent := False;
 
-  TokenFileName := TokenDir + DataBaseName + '.tok';
-  SymbolFileName := SymbolDir + DataBaseName + '.sym';
-  ModelFileName := ModelDir + DataBaseName + '_best.model';
-
-  // Verify all required files before replacing in-memory data.
-  if not FileExists(TokenFileName) then begin
-    Writeln('Token file not found: ', TokenFileName);
-    Exit;
-  end;
-
-  if not FileExists(SymbolFileName) then begin
-    Writeln('Symbol table not found: ', SymbolFileName);
-    Exit;
-  end;
-
-  if not FileExists(ModelFileName) then begin
-    Writeln('Model file not found: ', ModelFileName);
-    Exit;
-  end;
+  // Identify the checkpoint and its matching input files.
+  if not SelectBestModelFiles(True) then Exit;
 
   // Discard CUDA storage belonging to the preceding model.
   if CudaAllocated or (CuHandle <> nil) then
@@ -1860,8 +2257,6 @@ begin
   Write('Loaded: Token list = ', TokenFileName, '; Model = ', ModelFileName);
   Writeln('; Raw tokens = ', RawTokenCount, '; Padded tokens = ', PaddedTokenCount, '; nVocab = ', nVocab, '.');
 
-  WorkingName := CurrentBaseName;
-
   Writeln('Loaded checkpoint: ', ModelFileName, '.');
 
   if AskYesNo('Proceed to resumed training?', True) then begin
@@ -1881,30 +2276,19 @@ begin
 end;
 
 // Resume a predefined GPT-2 best model.
-procedure DoResumeBestGPT2Model(const ModelTitle, FolderName, DataBaseName: string);
+procedure DoResumeBestGPT2Model(const ModelTitle, FolderName: string);
 begin
   Writeln;
   Writeln('--- ', ModelTitle, ' ---');
 
-  SelectExistingWork(FolderName, DataBaseName);
+  SelectExistingWork(FolderName);
 
   TokenizedCorpusPresent := False;
   SymbolTablePresent := False;
   ModelPresent := False;
 
-  TokenFileName := TokenDir + DataBaseName + '.tok';
-  ModelFileName := ModelDir + DataBaseName + '_best.model';
-
-  // Verify all required files before replacing in-memory data.
-  if not FileExists(TokenFileName) then begin
-    Writeln('Token file not found: ', TokenFileName);
-    Exit;
-  end;
-
-  if not FileExists(ModelFileName) then begin
-    Writeln('Model file not found: ', ModelFileName);
-    Exit;
-  end;
+  // Identify the checkpoint and its matching token list.
+  if not SelectBestModelFiles(False) then Exit;
 
   // Establish GPT-2 token values, especially PAD, before counting tokens.
   SetTokenizerMode(GPT2Tokenizer);
@@ -1954,8 +2338,6 @@ begin
   Write('Loaded: Token list = ', TokenFileName, '; Model = ', ModelFileName);
   Writeln('; Raw tokens = ', RawTokenCount, '; Padded tokens = ', PaddedTokenCount, '; nVocab = ', nVocab, '.');
 
-  WorkingName := CurrentBaseName;
-
   Writeln('Loaded checkpoint: ', ModelFileName, '.');
 
   if AskYesNo('Proceed to resumed training?', True) then begin
@@ -1977,103 +2359,103 @@ end;
 // Resume the predefined Gibbon 924 WesT model.
 procedure DoGibbon924WModel;
 begin
-  DoResumeBestWesTModel('Gibbon 924 Best Model', 'gibbon924w', 'gibbon', WesTokenizer);
+  DoResumeBestWesTModel('Gibbon 924 Best Model', 'gibbon924w', WesTokenizer);
 end;
 
 // Resume the predefined Gibbon 924 GPT model.
 procedure DoGibbon924GModel;
 begin
-  DoResumeBestGPT2Model('Gibbon 924 Best Model', 'gibbon924g', 'gibbon');
+  DoResumeBestGPT2Model('Gibbon 924 Best Model', 'gibbon924g');
 end;
 
 // Resume the predefined Gibbon 924 WesT model.
 procedure DoGibbon924UModel;
 begin
-  DoResumeBestWesTModel('Gibbon 924 Best Model', 'gibbon924u', 'gibbon', UDTokenizer);
+  DoResumeBestWesTModel('Gibbon 924 Best Model', 'gibbon924u', UDTokenizer);
 end;
 
 // Resume the predefined Churchill UD model.
 procedure DoChurchill925UModel;
 begin
-  DoResumeBestWesTModel('Churchill 925 Best Model', 'churchill925u', 'churchill', UDTokenizer);
+  DoResumeBestWesTModel('Churchill 925 Best Model', 'churchill925u', UDTokenizer);
 end;
 
 // Resume the predefined Churchill Wes model.
 procedure DoChurchill1006WModel;
 begin
-  DoResumeBestWesTModel('Churchill 1006 Best Model', 'churchill1006w', 'churchill', WesTokenizer);
+  DoResumeBestWesTModel('Churchill 1006 Best Model', 'churchill1006w', WesTokenizer);
 end;
 
 // Resume the predefined The Monkey''s Paw Wes model.
 procedure DoTMP928WModel;
 begin
-  DoResumeBestWesTModel('The Monkey''s Paw 928 Best Model', 'TMP928w', 'TMP', WesTokenizer);
+  DoResumeBestWesTModel('The Monkey''s Paw 928 Best Model', 'TMP928w', WesTokenizer);
 end;
 
 // Resume the predefined Tragedy UD model.
 procedure DoTragedy924UModel;
 begin
-  DoResumeBestWesTModel('Tragedy 924 Best Model', 'tragedy924u', 'tragedy', UDTokenizer);
+  DoResumeBestWesTModel('Tragedy 924 Best Model', 'tragedy924u', UDTokenizer);
 end;
 
 // Resume the predefined Tiny Stories 2 MB Wes model.
 procedure DoTS2UModel;
 begin
-  DoResumeBestWesTModel('Tiny Stories 2MB Wes 104 Best Model', 'ts2mb104w', 'tinystories_2mb', WesTokenizer);
+  DoResumeBestWesTModel('Tiny Stories 2MB Wes 104 Best Model', 'ts2mb104w', WesTokenizer);
 end;
 
 // Resume the predefined Tiny Stories 5 MB UD model.
 procedure DoTS5UModel;
 begin
-  DoResumeBestWesTModel('Tiny Stories 5MB WesUD 925 Best Model', 'ts5mb925u', 'tinystories_5mb_ud', UDTokenizer);
+  DoResumeBestWesTModel('Tiny Stories 5MB WesUD 925 Best Model', 'ts5mb925u', UDTokenizer);
 end;
 
 // Resume the predefined Tiny Stories 10 MB Wes model.
 procedure DoTS2WModel;
 begin
-  DoResumeBestWesTModel('Tiny Stories 2MB WesT 104 Best Model', 'ts2mb104w', 'tinystories_2mb', WesTokenizer);
+  DoResumeBestWesTModel('Tiny Stories 2MB WesT 104 Best Model', 'ts2mb104w', WesTokenizer);
 end;
 
 // Resume the predefined Tiny Stories 10 MB Wes model.
 procedure DoTS10WModel;
 begin
-  DoResumeBestWesTModel('Tiny Stories 10MB WesT 102 Best Model', 'ts10mb102w', 'tinystories_10mb', WesTokenizer);
+  DoResumeBestWesTModel('Tiny Stories 10MB WesT 102 Best Model', 'ts10mb102w', WesTokenizer);
 end;
 
 // Resume the predefined Tiny Stories 60 MB Wes model.
 procedure DoTS60WModel;
 begin
-  DoResumeBestWesTModel('Tiny Stories 60MB WesT 925 Best Model', 'ts60mb925w', 'tinystories_60mb', WesTokenizer);
+  DoResumeBestWesTModel('Tiny Stories 60MB WesT 925 Best Model', 'ts60mb925w', WesTokenizer);
 end;
 
 // Resume the predefined Tiny Stories 100 MB Wes model.
 procedure DoTS100WModel;
 begin
-  DoResumeBestWesTModel('Tiny Stories 100MB WesT 927 Best Model', 'ts100mb927w', 'tinystories_100mb', WesTokenizer);
+  DoResumeBestWesTModel('Tiny Stories 100MB WesT 927 Best Model', 'ts100mb927w', WesTokenizer);
 end;
 
 // Resume the predefined Tiny Stories 20 MB GPT-2 model.
 procedure DoTS20GModel;
 begin
-  DoResumeBestGPT2Model('Tiny Stories 20MB GPT2 930 Best Model', 'ts20mb930g', 'tinystories_20mb');
+  DoResumeBestGPT2Model('Tiny Stories 20MB GPT2 930 Best Model', 'ts20mb930g');
 end;
 
 // Resume the predefined Tiny Stories 20 MB WesT SplitSwiGLU model.
 procedure DoTS20WModel;
 begin
-  DoResumeBestWesTModel('Tiny Stories 20MB WesT SplitSwiGLU 1014 Best Model', 'ts20mb1014wss', 'tinystories_20mb', WesTokenizer);
+  DoResumeBestWesTModel('Tiny Stories 20MB WesT SplitSwiGLU 1014 Best Model', 'ts20mb1014wss', WesTokenizer);
 end;
 
 // Resume the predefined Tiny Stories 20 MB WesUD model.
 procedure DoTS20UDModel;
 begin
-  DoResumeBestGPT2Model('Tiny Stories 20MB WesUD 923 Best Model', 'ts20mb923u', 'tinystories_20mb');
+  DoResumeBestWesTModel('Tiny Stories 20MB WesUD 923 Best Model', 'ts20mb923u', UDTokenizer);
 end;
 
 // Resume the predefined Tiny Stories 100 MB GPT-2 model.
 procedure DoTS100GModel;
 begin
-  DoResumeBestGPT2Model('Tiny Stories 100MB GPT2 1005 Best Model', 'ts100mb1005g', 'tinystories_100mb');
+  DoResumeBestGPT2Model('Tiny Stories 100MB GPT2 1005 Best Model', 'ts100mb1005g');
 end;
 
 // Display and process the predefined-model menu.
@@ -2138,7 +2520,8 @@ begin
   Writeln('     Select WesTokenizer, UDTokenizer, or GPT2Tokenizer. Wes and UD may create a symbol table or use an existing one.');
   Writeln('  R: Train -- train a model on a token list.');
   Writeln('     Requires a token list and matching symbol table. Can start a new model or resume from a saved model.');
-  Writeln('  I: Infer -- run inference.');
+  Writeln('  C: Continue an existing experiment from its saved checkpoint.');
+  Writeln('     Enter the work folder name; model, tokens, and symbols are located automatically.');  Writeln('  I: Infer -- run inference.');
   Writeln('     Requires a saved model and matching symbol table.');
   Writeln('  J: Join symbol tables.');
   Writeln('     Requires two symbol tables.');
@@ -2429,16 +2812,10 @@ begin
     Writeln('The program is set to respond automatically to all yes/no selections with yes.');
   Writeln;
 
-  // Establish the root for work folders and ask for the active work folder.
+  // Initialize a default folder silently.
+  // Individual workflows select their own work folders.
   NormalizeExistingWorkRoot;
-  Writeln('Work folders are created under ', ExistingWorkRoot); // Do not use YesToAll here.
-  Write('Enter work folder name, blank for WesChatWork: ');
-  Readln(WorkingDir);
-
-  // Resolve and initialize the active work folder.
-  WorkingDir := ResolveWorkFolder(WorkingDir);
-  InitWorkFolders(WorkingDir);
-  // Writeln('Work folder: ', WorkRoot);
+  SetWorkIdentity(ResolveWorkFolder('WesChatWork'));
 
   // Display the main menu.
   Options;
@@ -2453,6 +2830,7 @@ begin
       case Ch of
         'T': DoTokenize;
         'R': DoTrain;
+        'C': DoContinueExperiment;
         'I': DoInfer;
         'J': DoJoinSymbolTables;
         'M': DoPredefinedWork;

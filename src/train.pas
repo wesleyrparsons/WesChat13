@@ -878,9 +878,6 @@ begin
 end;
 
 { Loss computation }
-// Compute mean cross-entropy loss with the CUDA row-loss kernel.
-{ Loss computation }
-
 // Compute mean cross-entropy loss and separate lexical and UD-token losses.
 function ComputeCELossGPU(dProbs: PSingle; dTargetTokens: PInteger; dRowLoss: PSingle;
   const TargetTokens: TIDimVector; var RowLoss: TRowLossVector; var LossBreakdown: TLossBreakdown): Double;
@@ -1061,12 +1058,14 @@ begin
     Input[i] := TokenizedCorpus[StartIndex + i];
 end;
 
-// Build valid starting positions for all windows in an epoch.
+// Build valid window starting positions within a specified token range.
 procedure BuildWindowStarts(const TokenCount, SeqLen, Stride, Epoch, StartStride: Integer; var Starts: TIVector);
 var
   Start, Count: Integer;
 begin
   SetLength(Starts, 0);
+
+  if (Stride <= 0) or (TokenCount <= SeqLen) then Exit;
 
   Start := (Epoch * StartStride) mod Stride;
   Count := 0;
@@ -1082,13 +1081,13 @@ end;
 
 // Compute sampled mean CE loss before training begins.
 function ComputeSampledMeanLoss(var WModelParams: TWModelParams; var WModelState: TWModelState; const TokenizedCorpus: TIVector;
-  const EpochForStarts, SampleCount: Integer): Double;
+  const TrainingTokenCount, EpochForStarts, SampleCount: Integer): Double;
 var
   i, Index, Start, Count: Integer;
   LossSum: Double;
   Starts: TIVector;
 begin
-  BuildWindowStarts(Length(TokenizedCorpus), SeqLen, Stride, EpochForStarts, StartStride, Starts);
+  BuildWindowStarts(TrainingTokenCount, SeqLen, Stride, EpochForStarts, StartStride, Starts);
 
   if Length(Starts) = 0 then begin
     Result := 0.0;
@@ -1163,6 +1162,49 @@ begin
   OverrideLearningRate := -1.0;
 end;
 
+// Ensure that the experiment has its own symbol table file.
+procedure EnsureExperimentSymbolTable;
+var
+  SourceName, Destination: string;
+begin
+  // GPT-2 uses its fixed vocabulary files.
+  if not (TokenizerKind in [WesTokenizer, UDTokenizer]) then Exit;
+
+  if Length(SymbolTable) = 0 then
+    raise Exception.Create('No symbol table in memory.');
+
+  if Length(SymbolTable) <> nVocab then
+    raise Exception.CreateFmt('Symbol table mismatch: symbols=%d, model vocabulary=%d.', [Length(SymbolTable), nVocab]);
+
+  if Trim(SymbolDir) = '' then
+    raise Exception.Create('Experiment symbol directory is not set.');
+
+  if not ForceDirectories(SymbolDir) then
+    raise Exception.Create('Cannot create symbol directory: ' + SymbolDir);
+
+  // Preserve the source filename when it exists.
+  if FileExists(SymbolFileName) then
+    SourceName := ExtractFileName(SymbolFileName)
+  else begin
+    SourceName := WorkingName;
+    if TokenizerKind = UDTokenizer then
+      SourceName := SourceName + '_ud';
+    SourceName := SourceName + '.sym';
+  end;
+
+  Destination := IncludeTrailingPathDelimiter(SymbolDir) + SourceName;
+
+  if not FileExists(Destination) then begin
+    SaveSymbolTable(Destination, SymbolTable);
+    Writeln('Experiment symbol table saved: ', Destination);
+  end
+  else
+    Writeln('Experiment symbol table exists: ', Destination);
+
+  // The experiment-local file becomes the active symbol file.
+  SymbolFileName := Destination;
+end;
+
 { Main training workflow }
 // Train a new or resumed model on the supplied tokenized corpus.
 procedure RunTrain(var WModelParams: TWModelParams; var WModelState: TWModelState; var WAdamWState: TWAdamWState; const TokenizedCorpus: TIVector);
@@ -1170,13 +1212,16 @@ const
   ln2 = 0.693147180559945309;
   MinWindowsPerEpoch = 100;
   BaselineSampleCount = 256;
+  MinValidationTokens = 100000;
+  ValidationFraction = 0.10;
+  ValidationSampleCount = 256;
 var
   i, j, k: Integer;
   Blk, Epoch, FirstEpoch, OldLastBestSaveEpoch, Start, WindowCount, MaxStride: Integer;
   Loss, DiffLoss, BitsPerByte, EpochLoss, MeanEpochLoss, LastMeanEpochLoss, OldBestSavedLoss: Double;
   TokensPerSecond, ElapsedEpochTime: Double;
   TargetLearningRate: Double;
-  Starts: TIVector;
+  Starts, ValidationStarts: TIVector;
   NeedParamCopy, WasNewModel: Boolean;
   AdamParamRMS, AdamUpdateRMS, AdamUpdateRatio, AdamMRMS, AdamSqrtVRMS: Double;
   EpochTime: TDateTime;
@@ -1184,6 +1229,15 @@ var
   CompactStats: TCompactTensorStats;
   WarmupSteps : Integer;
   AdaptiveLRReason: string = 'No change in adaptive learning yet.';
+  TrainingTokenCount, ValidationTokenCount: Integer;
+  ValidationStart: Integer;
+  ValidationEnabled: Boolean;
+  ValidationLoss: Double;
+  TrainingEvaluationStarts: TIVector;
+  TrainingEvaluationLoss: Double;
+  SeenInTraining: array of Boolean;
+  UnseenValidationTokens, ValidValidationTokens, Tok: Integer;
+  ResumeAnswer: string;
   {WeakX7Vector: TX7EigenVector;       For dim repurposing.
   WeakEigenvalue: Double;
   NormalLoss, ProjectedLoss: Double;}
@@ -1324,7 +1378,7 @@ var
       't', 'T': begin
         Write('Current stride = ', Stride, '. Enter new stride: ');
         Readln(j);
-        MaxStride := (Length(TokenizedCorpus) - SeqLen) div MinWindowsPerEpoch;
+        MaxStride := (TrainingTokenCount - SeqLen) div MinWindowsPerEpoch;
 
         if j <= 0 then
           Writeln('Stride must be greater than zero.')
@@ -1354,8 +1408,157 @@ var
     end;
   end;
 
+  // Evaluate a fixed sample of windows without dropout or weight updates.
+  function EvaluateSampledLoss(const SampleStarts: TIVector): Double;
+  var
+    i, Index, Start, Count: Integer;
+    LossSum: Double;
+    WasTraining: Boolean;
+    SavedITemperature: Single;
+  begin
+    Result := 0.0;
+
+    Count := Min(ValidationSampleCount, Length(SampleStarts));
+    if Count = 0 then Exit;
+
+    LossSum := 0.0;
+    WasTraining := Training;
+    SavedITemperature := ITemperature;
+
+    // Evaluation mode: disable dropout and use training temperature.
+    Training := False;
+    ITemperature := TTemperature;
+
+    try
+      for i := 0 to Count - 1 do begin
+        if Count = 1 then
+          Index := 0
+        else
+          Index := Round(Double(i) * High(SampleStarts) / (Count - 1));
+
+        Start := SampleStarts[Index];
+
+        BuildInputVector(InputTokens, TokenizedCorpus, Start, SeqLen);
+        BuildTargetVector(TargetTokens, TokenizedCorpus, Start, SeqLen);
+
+        LossSum := LossSum +
+          ComputeLossOnly(WModelParams, WModelState, InputTokens, TargetTokens, LossBreakdown);
+      end;
+    finally
+      Training := WasTraining;
+      ITemperature := SavedITemperature;
+    end;
+
+    Result := LossSum / Count;
+  end;
+
+  {// Evaluate a fixed sample of held-out validation windows.
+  function EvaluateValidationLoss: Double;
+  var
+    i, Index, Start, Count: Integer;
+    LossSum: Double;
+    WasTraining: Boolean;
+    SavedITemperature: Single;
+  begin
+    Result := 0.0;
+
+    if not ValidationEnabled or (Length(ValidationStarts) = 0) then Exit;
+
+    Count := Min(ValidationSampleCount, Length(ValidationStarts));
+    LossSum := 0.0;
+
+    WasTraining := Training;
+    SavedITemperature := ITemperature;
+
+    // Disable dropout and use the training softmax temperature.
+    Training := False;
+    ITemperature := TTemperature;
+
+    try
+      for i := 0 to Count - 1 do begin
+        if Count = 1 then
+          Index := 0
+        else
+          Index := Round(Double(i) * High(ValidationStarts) / (Count - 1));
+
+        Start := ValidationStarts[Index];
+
+        BuildInputVector(InputTokens, TokenizedCorpus, Start, SeqLen);
+        BuildTargetVector(TargetTokens, TokenizedCorpus, Start, SeqLen);
+
+        LossSum := LossSum + ComputeLossOnly(WModelParams, WModelState, InputTokens, TargetTokens, LossBreakdown);
+      end;
+    finally
+      Training := WasTraining;
+      ITemperature := SavedITemperature;
+    end;
+
+    Result := LossSum / Count;
+  end;}
+
 begin
+  EnsureExperimentSymbolTable;
+
   { Training session initialization }
+  // Establish training and validation token ranges.
+  if NewModel then
+    ValidationEnabled := RawTokenCount >= MinValidationTokens
+  else if RawTokenCount >= MinValidationTokens then begin
+    Write('Resume with the previous 90/10 validation split? (y/N): ');
+    Readln(ResumeAnswer);
+    ValidationEnabled := SameText(Trim(ResumeAnswer), 'Y');
+  end
+  else
+    ValidationEnabled := False;
+
+  if ValidationEnabled then begin
+    TrainingTokenCount := Trunc(RawTokenCount * (1.0 - ValidationFraction));
+    ValidationStart := TrainingTokenCount;
+    ValidationTokenCount := RawTokenCount - ValidationStart;
+
+    Write('Validation enabled. Training tokens = ', TrainingTokenCount, '; Validation tokens = ', ValidationTokenCount,
+      '; Validation begins at token ', ValidationStart, '.');
+  end
+  else begin
+    TrainingTokenCount := Length(TokenizedCorpus);
+    ValidationStart := 0;
+    ValidationTokenCount := 0;
+
+    Writeln('Validation disabled: corpus smaller than ', MinValidationTokens, ' tokens.');
+  end;
+
+
+  if ValidationEnabled then begin
+    SetLength(SeenInTraining, nVocab);
+
+    // Record every vocabulary ID encountered in training.
+    for i := 0 to TrainingTokenCount - 1 do begin
+      Tok := TokenizedCorpus[i];
+      if (Tok >= 0) and (Tok < nVocab) then
+        SeenInTraining[Tok] := True;
+    end;
+
+    // Count validation occurrences of IDs absent from training.
+    UnseenValidationTokens := 0;
+    ValidValidationTokens := 0;
+
+    for i := ValidationStart to ValidationStart + ValidationTokenCount - 1 do begin
+      Tok := TokenizedCorpus[i];
+
+      if (Tok >= 0) and (Tok < nVocab) then begin
+        Inc(ValidValidationTokens);
+
+        if not SeenInTraining[Tok] then
+          Inc(UnseenValidationTokens);
+      end;
+    end;
+
+    //if ValidValidationTokens > 0 then
+      Writeln(' Validation tokens with unseen IDs = ', UnseenValidationTokens, ' (', 100.0 * UnseenValidationTokens / ValidValidationTokens:0:2, '%).');
+
+    SetLength(SeenInTraining, 0);
+  end;
+
   // Configure automatic best-model saving.
   LastBestSaveEpoch := -1000000000;    // Sentinel for no best model saved.
   AutoSaveEpoch := 10;                 // Start automatic saving of the best model at this epoch.
@@ -1414,7 +1617,6 @@ begin
   end;
 
   { Model and CUDA initialization }
-
   // A new model must not reuse the preceding model's CUDA storage.
   if WasNewModel and (CudaAllocated or (CuHandle <> nil)) then
     EndCuda(WModelParams, WModelState, WAdamWState);
@@ -1466,14 +1668,36 @@ begin
     FirstEpoch := CompletedEpochs;
 
     // Determine warmup length from the number of updates in the first epoch.
-    BuildWindowStarts(Length(TokenizedCorpus), SeqLen, Stride, FirstEpoch, StartStride, Starts);
+    BuildWindowStarts(TrainingTokenCount, SeqLen, Stride, FirstEpoch, StartStride, Starts);
     WarmupSteps := Max(1, Length(Starts) div 2);
     Write('Warmup steps = ', WarmupSteps, ' (half of ', Length(Starts), ' training windows in first epoch). ');
     Writeln('Learning-rate warmup will use ', WarmupSteps, ' optimizer steps.');
 
+    { Build fixed validation windows. }
+    SetLength(ValidationStarts, 0);
+
+    if ValidationEnabled then begin
+      BuildWindowStarts(ValidationTokenCount, SeqLen, Stride, 0, StartStride, ValidationStarts);
+
+      // Convert validation-relative positions to absolute corpus positions.
+      for j := 0 to High(ValidationStarts) do
+        Inc(ValidationStarts[j], ValidationStart);
+
+      Write('Validation windows = ', Length(ValidationStarts));
+    end;
+
+    { Build fixed training-evaluation windows. }
+    SetLength(TrainingEvaluationStarts, 0);
+
+    if ValidationEnabled then begin
+      BuildWindowStarts(TrainingTokenCount, SeqLen, Stride, 0, StartStride, TrainingEvaluationStarts);
+
+      Writeln('; Training evaluation windows = ', Length(TrainingEvaluationStarts), '.');
+    end;
+
     { Baseline evaluation }
     // Estimate baseline loss from evenly spaced windows across the corpus.
-    LastMeanEpochLoss := ComputeSampledMeanLoss(WModelParams, WModelState, TokenizedCorpus, FirstEpoch, BaselineSampleCount);
+    LastMeanEpochLoss := ComputeSampledMeanLoss(WModelParams, WModelState, TokenizedCorpus, TrainingTokenCount, FirstEpoch, BaselineSampleCount);
 
     // Report the baseline and training settings.
     Writeln('>>Estimated baseline loss before training = ', LastMeanEpochLoss: 8: 6, '; Perplexity = ', Exp(LastMeanEpochLoss): 0: 7,
@@ -1505,8 +1729,14 @@ begin
       EpochLoss := 0;
       WindowCount := 0;
 
-      // Build all valid window starting positions for this epoch.
-      BuildWindowStarts(Length(TokenizedCorpus), SeqLen, Stride, Epoch, StartStride, Starts);
+      // Build training windows using only the training portion.
+      BuildWindowStarts(TrainingTokenCount, SeqLen, Stride, Epoch, StartStride, Starts);
+
+      // Diagnostic.
+      if Epoch = FirstEpoch then begin
+        Writeln('Training token count = ', TrainingTokenCount, '; Training windows = ', Length(Starts),
+          '; Validation windows = ', Length(ValidationStarts), '; Last training window starts at token ', Starts[High(Starts)], '.');
+      end;
 
       // Initialize UD performance vars.
       TotalLexicalLossSum := 0;
@@ -1747,6 +1977,33 @@ begin
       CompletedEpochs := Epoch + 1;
       BitsPerByte := MeanEpochLoss * RawTokenCount / nCorpus / Ln2;
 
+      // Measure generalization after all training updates for this epoch.
+
+       // Evaluate both training and validation windows using current weights.
+      if ValidationEnabled then begin
+        TrainingEvaluationLoss := EvaluateSampledLoss(TrainingEvaluationStarts);
+        ValidationLoss := EvaluateSampledLoss(ValidationStarts);
+
+        Writeln('>>Training evaluation: Loss = ', TrainingEvaluationLoss:0:6,
+          '; Perplexity = ', Exp(TrainingEvaluationLoss):0:6,
+          '; Windows = ', Min(ValidationSampleCount, Length(TrainingEvaluationStarts)), '.');
+
+        Writeln('>>Validation: Loss = ', ValidationLoss:0:6,
+          '; Perplexity = ', Exp(ValidationLoss):0:6,
+          '; Windows = ', Min(ValidationSampleCount, Length(ValidationStarts)), '.');
+
+        TrainLog('Training evaluation loss = ' + FloatToStrF(TrainingEvaluationLoss, ffFixed, 10, 6));
+        TrainLog('Validation loss = ' + FloatToStrF(ValidationLoss, ffFixed, 10, 6));
+      end;
+      {if ValidationEnabled then begin
+        ValidationLoss := EvaluateValidationLoss;
+
+        Writeln('>>Validation: Loss = ', ValidationLoss:0:6, '; Perplexity = ', Exp(ValidationLoss):0:6,
+          '; Windows = ', Min(ValidationSampleCount, Length(ValidationStarts)), '.');
+
+        TrainLog('Validation loss = ' + FloatToStrF(ValidationLoss, ffFixed, 10, 6));
+      end;}
+
       { Epoch completion }
       // Save a new best model when the configured conditions are met.
       if MeanEpochLoss < MinLoss then begin
@@ -1845,7 +2102,8 @@ begin
         if VerboseTransform then
           ReportAdamWTensorStatistics(WModelParams, WAdamWState);
         // Report compact tensor statistics.
-        ReportCompactTensorStatistics(WModelParams, CompactStats);
+        if TensorStats then
+          ReportCompactTensorStatistics(WModelParams, CompactStats);
 
         // Compute new adaptive LR for the next epoch.
         with CompactStats do

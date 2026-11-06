@@ -451,7 +451,7 @@ var
   PauseIfKeyPressed: Boolean = True;              // Allow keyboard-triggered pauses.
   StopTraining: Boolean;                          // Set when training should stop for user input.
   TrainSuccess: Boolean = False;                  // Training completed successfully.
-  YesToAll: Boolean = True;                       // Say Yes to the option.
+  YesToAll: Boolean = False;                       // Say Yes to the option.
 
   VerboseTokenize: Boolean = False;               // Display tokenization and symbolization details.
   VeryVerboseTokenize: Boolean = False;           // Display additional tokenization detail.
@@ -491,11 +491,11 @@ var
 
 
 { WesChat installation folders }
-  var
-    WesChatRoot: string = '';       // Root of the entire WesChat installation.
-    SharedCorpusDir: string = '';   // Shared input corpora.
-    DataDir: string = '';           // GPT-2 vocabulary, merges, UD data.
-    ToolsDir: string = '';          // External utilities.
+var
+  WesChatRoot: string = '';       // Root of the entire WesChat installation.
+  SharedCorpusDir: string = '';   // Shared input corpora.
+  DataDir: string = '';           // GPT-2 vocabulary, merges, UD data.
+  ToolsDir: string = '';          // External utilities.
 
 { Work folders and file names }
 var
@@ -562,6 +562,7 @@ var
   ActivationAlpha: Single = 0.01;                 // Activation parameter.
   LearningStyle: TLearningStyle = SlowLearning;   // Learning-rate schedule style.
   ShuffleWindows: Boolean = True;                 // Shuffle training windows each epoch.
+  TensorStats: Boolean = False;                      // Display gradient diagnoses.
 
   BaseLearningRate: Double = 0.000100;            // Base learning rate.
   FloorLearningRate: Double = 0.000005;           // Minimum scheduled learning rate.
@@ -575,9 +576,9 @@ var
   ITemperature: Single = 1.00000;                 // Inference softmax temperature.
   ClipLimit: Single = 0.40000;                    // Gradient clipping limit.
 
-  ADropOut: Single = 0.01;                        // Attention dropout probability.
-  MLPDropOut: Single = 0.01;                      // MLP dropout probability.
-  RDropout: Single = 0.01;                        // Residual dropout probability.
+  ADropOut: Single = 0.1;                         // Attention dropout probability.
+  MLPDropOut: Single = 0.1;                       // MLP dropout probability.
+  RDropout: Single = 0.1;                         // Residual dropout probability.
   GlobalSeed: UInt64 = 123456789;                 // Base random seed.
 
   Stride: Integer = 128;                          // Training-window stride.

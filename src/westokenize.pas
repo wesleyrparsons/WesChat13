@@ -792,7 +792,7 @@ begin
       Output := SaveOut;
     end;
 
-    Writeln('Tokenization log written: ', OutName);
+    Writeln('Tokenization log written: ', OutName, '.');
 
   except
     on E: Exception do begin

@@ -79,15 +79,35 @@ begin
 end;
 
 // Pause, subject to DoNotPause.
+
+ // Pause, subject to DoNotPause. Allow V to disable verbose training.
 procedure Pause;
 var
   tt: TDateTime;
+  Key: Char;
 begin
-  if not DoNotPause then begin
-    tt := Now;
+  if DoNotPause then Exit;
+
+  tt := Now;
+
+  if Training and VerboseTransform then begin
+    Write('Hit <CR> to continue, or V to turn verbose OFF: ');
+
+    repeat
+      Key := ReadKey;
+    until Key in [#13, 'v', 'V'];
+
+    Writeln;
+
+    if Key in ['v', 'V'] then begin
+      VerboseTransform := False;
+      Writeln('Verbose transform off. Training continues...');
+    end;
+  end
+  else
     HardPause;
-    Stoptime := StopTime + Now - tt;
-  end;
+
+  StopTime := StopTime + Now - tt;
 end;
 
 // Pause, subject to DoNotPause, no new line.
